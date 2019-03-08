@@ -30,7 +30,7 @@
 %
 % Adonay Nunes, SFU, Vancouver, March 2019
 % adonay.s.nunes@gmail.com
-% from github: AdoNunes/MCMV_Multisource_Beamforming
+% from github: AdoNunes/MultiSource_Beamformer
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% add necessary paths

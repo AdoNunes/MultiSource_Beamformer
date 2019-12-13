@@ -13,4 +13,4 @@ here it is provided:
     - Multiple constrained minimum variance beamformer (MCMV) performance in connectivity analyses
       https://doi.org/10.1016/j.neuroimage.2019.116386
 
-![MCMV figure] (MCMV.png?raw=true)
+![MCMV figure](MCMV.png?raw=true)

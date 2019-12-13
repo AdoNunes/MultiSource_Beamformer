@@ -77,7 +77,7 @@ W_MCMV      = sOut2.arrW';
 % LCMV
 for p = 1:size(LF,1)
     sIn.arrH    = LF( p ,:,:);  
-    sOut1b      = constructMCMVWeights22sMER(sIn);
+    sOut1b      = MCMV_BF(sIn);
     W_LCMV(p,:) = sOut1b.arrW';
 end
 

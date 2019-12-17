@@ -1,100 +1,88 @@
 function sOut = MCMV_BF(sIn)
 %
-% SYNTAX:
-%   sOut = MCMV_BF(sIn)
 %
 % This function generates a set of MCMV (multi-source) scalar beamformer
-% weights for a given set of nSrc (= number of sources) forward solution
-% triplets H_i, i = 1:nSrc. Each triplet H_i(r_i) = [h_x, h_y, h_z] is a (M
-% x 3) matrix, where M is a number of sensors in a sensor array and h_? is
-% a (M x 1) lead field vector of a dipole located at point r_i and oriented
-% in x, y, z directions, respectively. The function produces (M x nSrc)
-% matrix W of beamformer weights, and (3 x nSrc) matrix U of source
-% orientations. These orientations are approximate and are found using
-% iteration procedure described in an article Moiseev et al., Neuroimage,
-% 2011, v.58, p.481?496.
-% For some sources, orientations may be known in advance. Those sources are
-% referred to as "reference sources" or "references" here. IT IS ASSUMED
-% THAT IN THE LIST OF TRIPLETS H_i REFERENCES (IF ANY) ALWAYS GO FIRST. If
-% all orientations are known, then beamformer weights are calculated using
-% a simple algebraic expression and no iterations are needed.
+% weights for a given set of N sources (nSrc) forward solutions (FS). 
+% First for each source, saliences are computed independently, then from
+% strongest to weakest contribution of the strongest source is removed to 
+% find the orientation of the next strongest source.
+% This iteration procedure is described in :
+%     Moiseev et al., Neuroimage, 2011, v.58, p.481-496.
 %
-% Technically, this function is an adapter to a more general
-% iterateMultiSrcBeamA() function, for a simple case when source locations
-% are fixed and known in advance.
+% The function produces a matrix W of beamformer weights (nSrc x nSensors) 
+% and a matrix U of sources orientations (3 x nSrc). Given the constraints
+% of unit gain within sources and zero gain across sources:
+%     W * (FS*U') = Identity;
+%
+% This function also provides a Signal to Noise Ratio (SNR) between the 
+% signal source covariance and the full (signal + noise) source covariance.
+% The SNR can be used to localize the strongest sources in a grid or surface.
+% In this case, run this function for each source to get a one source SNR.
+%
 %
 % Input:
-%   sIn         - a structure with input arguments, with the following
-%                 fields:
-%                 : arrH    (nSrc x 3 X M)) (3-dimensional array: "Vector"
-%                           lead fields for the sources. For each target
-%                           "source" i, the 3 x M leadfield triplet is =
-%                           arrH(i,:,:) = [h_x, h_y, h_z]', i = 1,...,nSrc,
-%                           h_? being a lead field of a dipole oriented in
-%                           ?-direction. nRef sources with known
-%                           orientations should be listed first; nRef may
-%                           be 0
-%                 : Rm1     (M x M) an inverse of the full (= noise +src)
-%                           covariance matrix
+%   sIn         - a structure with input arguments, with the fields:
+%                 
+%                 : arrH    (nSrc x 3 X nSens)  the leadfields (or FS) for
+%                           each of the sources. The FS are oriented in the
+%                           x,y,z dimensions 
+%                 : iR     (nSens x nSens) the inverse of the sensor 
+%                           covariance matrix (the task period)
+%                           
 %                 Optional:
-%                 : sBeamType (string). Beamformemr type, one of MPZ, MAI,
-%                           MER, rMER. These types are described in the paper
-%                           referenced above. If not supplied, 'MPZ'
-%                           (Multi-source Pseudo-Z) is assumed by default
-%                 : arrN    (M x M) noise covariance. If not supplied, a
-%                           diagonal noise will be used
-%                 : Cavg    (M x M) Matrix of 2nd moments of the
-%                           epoch-averaged sensor signals. MUST be supplied
-%                           if evoked beamformer (MER or rMER) is used; not
-%                           needed for power beamformerms (MPZ, MAI)
-%                 : Uref    (3 x nRef) Orientations of reference sources.
-%                           Each column of Uref should be a vector of unit
-%                           length. nRef should be <= nSrc
-% Output:
-%   sOut        - a structure with the results, with the following fields:
-%                 : U3D     (3 x nSrc) - the found orientations of the sources
-%                 : arrW    (M x nSrc) - a set of MCMV weights
-%                 : beamSNR (double) - the beamformer joint power "SNR"
-%                           value for a set. Exact mathematical expression
-%                           for this quantity depends on the beamformer
-%                           type, but the physical meaning is the same
+%                 : arrN    (nSens x nSens) noise covariance (the intertial
+%                           or rest period). If not supplied, a diagonal 
+%                           noise cov. will be used
+%                 : Cavg    (nSens x nSens) Matrix of 2nd moments of the
+%                           epoch-averaged sensor signals (Bavg*Bavg') 
 %
-% A.Moiseev, BCNI, October 2017
+%
+% Output:
+%   sOut        - a structure with the output results, with the fields:
+%
+%                 : U3D     (3 x nSrc) the found orientations of the sources
+%                 : arrW    (nSens x nSrc) the MCMV weights of the sources
+%                 : order   (1 x nSrc) the order of strongest sources
+%                 : beamSNR (double) the beamformer joint power "SNR"
+%                           value for the set of nSrcs. 
+%
+% Originally written by A.Moiseev, BCNI, October 2017
 
-[nSrc, ~, M] = size(sIn.arrH);
 
+arrH = sIn.arrH;
+
+[nSrc, ~, nSens] = size(arrH);
 
 
 if ~isfield(sIn, 'arrN')
-    % Noise covariance was not specified - generate a diagonal one
-    arrN = M*eye(M)/trace(sIn.Rm1);   % This sets noise power ~ mean EV of R
+    % Noise covariance not specified - generate a diagonal one
+    arrN = nSens*eye(nSens)/trace(sIn.iR); % sets noise power ~ mean EV of iR
 else
-   arrN = sIn.arrN;  
+    arrN = sIn.arrN;  
 end
 
-arrH = sIn.arrH;
  
-if ~isfield(sIn, 'Cavg')
-    iR =  sIn.Rm1;
-    Is_Evoked = 0;
-else  % Event related BF
-    iR_C_iR = sIn.Rm1*sIn.Cavg*sIn.Rm1;
-    iR =  iR_C_iR;
-    Is_Evoked = 1;
+if ~isfield(sIn, 'Cavg')% SNR = MPZ
+    iR          = sIn.iR;
+    Is_Evoked   = 0;
+else  % Event related BF, SNR = MER
+    iR_C_iR     = sIn.iR * sIn.Cavg * sIn.iR;
+    iR          = iR_C_iR;
+    Is_Evoked   = 1;
 end
 
-iR_N_iR =  sIn.Rm1*arrN* sIn.Rm1;
+iR_N_iR =  sIn.iR * arrN * sIn.iR;
 
+%% First iterate independently to get single source SNR
 for iSrc = 1:nSrc % get U3D for each source
     h = squeeze(arrH(iSrc, :, :))';
      
-    
     T = h' * iR_N_iR * h;
     S = h' * iR * h;
     
-    [V , Ev] = eig(S, T); %% => S*V = T*V*Ev, bigger EV == bigger S
-    Evals = diag(Ev);
-    [Ev , idx] = sort(Evals,'descend');
+    [V , Ev]    = eig(S, T); %% => S*V = T*V*Ev, bigger EV == bigger S
+    Evals       = diag(Ev);
+    [~ , idx]   = sort(Evals,'descend');
     
     u = V  ( : , idx ( 1 ) ); 
     u = real (u / norm ( u ));
@@ -103,122 +91,145 @@ for iSrc = 1:nSrc % get U3D for each source
     
     hu = h * u ;  
     
-    iTu = invSPD(hu' * iR_N_iR * hu);  %
-    Su = hu' * iR * hu;  % Full G-matrix, shouldn t be iR_N_iR?
-    SNR(iSrc) = trace(Su*iTu);  % Pmai = tr(S* inv(T))-n, T = Y
+    iTu         = invSPD(hu' * iR_N_iR * hu);
+    Su          = hu' * iR * hu;  
+    SNR(iSrc)   = trace(Su*iTu);
     
-    Pow(iSrc) = trace(hu' * invSPD(sIn.Rm1) * hu); 
-    Pnoise(iSrc) = trace(hu' * arrN * hu); 
     
 end
 
-
 % if only one source
-[SNR_max idxMax] = sort(SNR(:), 'descend'); 
+nRef    = 0; 
+order   = 1;
 
-nRef = 0; 
-order = 1;
+%% Then iterate taking one source out at a time
 
-% else MCMV
-Hur = [];
 done = [];
 for iIter = 2:nSrc
-    nRef = iIter -1;
     
-    [SNR_max idxMax] = sort(SNR(:), 'descend');  
-    
-    order = idxMax(1:nRef);
+    nRef        = iIter -1;
+    [~, idxMax] = sort(SNR(:), 'descend');  
+    order       = idxMax(1:nRef);
     
     Hur = [];
     for o = 1:numel(order)
-        hu_r = squeeze(arrH(order(o), :, :))'*lstU3D(order(o),:)';
-        Hur = cat(2, Hur, hu_r);
+        hu_r    = squeeze(arrH(order(o), :, :))'*lstU3D(order(o),:)';
+        Hur     = cat(2, Hur, hu_r);
     end
     
     iR_N_iR_Hur = iR_N_iR * Hur;
-    iR_Hur = iR * Hur;
+    iR_Hur      = iR      * Hur;
     
-    Tr = Hur' * iR_N_iR_Hur;
-    Sr = Hur' * iR_Hur;
+    Tr          = Hur' * iR_N_iR_Hur;
+    Sr          = Hur' * iR_Hur;
     
-    iTr = invSPD(Tr);
+    iTr         = invSPD(Tr);
    
-    iTr_Sr_iTr = iTr * Sr * iTr;
+    iTr_Sr_iTr  = iTr * Sr * iTr;
  
     for iSrc = 1:nSrc
         if any(iSrc == order) && ~any(done == iSrc)
-            done = cat(1, done, iSrc);
-              
-        SNR(iSrc) = 999.9- iIter/10;
+            done      = cat(1, done, iSrc); 
+            SNR(iSrc) = 999.9- iIter/10; % just a big number to keep order
             
         elseif iSrc ~= order 
             
-            h = squeeze(arrH(iSrc, :, :))';
+            h   = squeeze(arrH(iSrc, :, :))';
  
-            T = h' * iR_N_iR * h;
-            S = h' * iR      * h;
+            T   = h' * iR_N_iR * h;
+            S   = h' * iR      * h;
             
             Tsr = h' * iR_N_iR_Hur;
             Ssr = h' * iR_Hur;
             
-            % Calculate matrices D and F
-            D = Tsr * iTr_Sr_iTr * Tsr' - Tsr * iTr * Ssr' - Ssr * iTr * Tsr' + S;
-            F = T - Tsr * iTr * Tsr';
+           
+            D   = Tsr * iTr_Sr_iTr * Tsr' - Tsr * iTr * Ssr' - Ssr * iTr * Tsr' + S;
+            F   = T - Tsr * iTr * Tsr';
             
-            [V ,Ev] = eig(D, F);
-            Evals = diag(Ev);
+            [V ,Ev]  = eig(D, F);
+            Evals    = diag(Ev);
             [~, idx] = sort(Evals,'descend');
             
-            u = V  ( : , idx ( 1 ) ); 
-            u = real (u / norm ( u ));
+            u   = V(:, idx(1) ); 
+            u   = real (u / norm(u));
            
             lstU3D(iSrc,:) = u';
             
-            hu = h * u ; 
-            Hu = horzcat(Hur, hu);
+            hu  = h * u ; 
+            Hu  = horzcat(Hur, hu);
           
-            iTu = invSPD(Hu' * iR_N_iR * Hu);  % Reconstructed source covariance
-            Su = Hu' * iR * Hu;  
-            SNR(iSrc) = trace(iTu*Su); 
-           
+            iTu       = invSPD(Hu' * iR_N_iR * Hu); 
+            Su        = Hu' * iR * Hu;  
+            SNR(iSrc) = trace(iTu * Su); 
+       
 
         end
     end
 end
 
 
-%WEIGHTS
-% takes the last one, previous as references
+%% Compute the BF Weights
+% All but the last are references
   
-refU = lstU3D(order,:);
-
-noRef = setdiff(1:nSrc, order);
-
+refU   = lstU3D(order,:);
+notRef = setdiff(1:nSrc, order);
 
 HrefT = [];
 for iRef = 1:nRef
-    hT = refU(iRef, :) * squeeze(arrH(order(iRef),:,:));
-    HrefT = [HrefT; hT];    
+    hT      = refU(iRef, :) * squeeze(arrH(order(iRef),:,:));
+    HrefT   = [HrefT; hT];    
 end
 
 if ~isempty(HrefT)
-    hT = lstU3D(noRef,:)*squeeze(arrH(noRef,:,:)); 
+    hT = lstU3D(notRef,:) * squeeze(arrH(notRef,:,:)); 
     Ht = [HrefT; hT];
-    wT = invSPD(Ht * sIn.Rm1 *Ht') * Ht * sIn.Rm1;
+    wT = invSPD(Ht * sIn.iR * Ht') * Ht * sIn.iR;
 else
     % Single source case
     U = lstU3D;
-    hT = U*squeeze(arrH); 
-    wT = hT * sIn.Rm1 / (hT * sIn.Rm1 * hT');
+    hT = U * squeeze(arrH); 
+    wT = hT * sIn.iR / (hT * sIn.iR * hT');
 end    
 
-sOut.U3D =  lstU3D';
-sOut.order = [order; setdiff(1:nSrc, order)]';
-sOut.arrW(:,[order;noRef]) = wT(:,:)';
+%% set outputs
 
- if ~Is_Evoked; SNR  = SNR -nSrc; end
+sOut.U3D     =  lstU3D';
+sOut.order   = [order; notRef]';
+sOut.arrW(:,[order;notRef]) = wT(:,:)';
+
+if ~Is_Evoked; SNR  = SNR -nSrc; end
  
-sOut.beamSNR = SNR(idxMax(end));
+sOut.beamSNR = SNR(notRef);
 
 end
 
+function [Am1, bException] = invSPD(A)
+%
+% SYNTAX:
+%   Am1 = invSPD(A)
+% 
+% This function finds an inverse of a SYMMETRIC POSITIVE DEFINITE matrix.
+% Supposed to be more accurate than using inv(), because the 
+% latter does not exploit the special form of A
+%
+% Input:
+%   A           (n x n) SPD matrix
+% Ouput:
+%   Am1         A^(-1)
+%   bException  true if fall back to inv() was necessary
+%
+% A. Moiseev, DSRF, July 2011
+
+bException = false;
+
+try
+    R=chol(A);      % Find upper triangular R such that R' * R = A;
+    I=eye(size(A)); 
+    Am1=R\(R'\I);    % NOTE: A\B = inv(A)*B
+catch
+    bException = true;
+    Am1=inv(A);
+    warning('Falled back to inv(A)');
+%    display(A);
+end
+end

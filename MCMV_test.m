@@ -10,8 +10,8 @@
 % from github: AdoNunes/MultiSource_Beamformer
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-ft_pat = dir('~/Documents/MATLAB/fieldtrip*');
-addpath (['~/Documents/MATLAB/',ft_pat.name])
+% ft_pat = dir('~/Documents/MATLAB/fieldtrip*');
+% addpath (['~/Documents/MATLAB/',ft_pat.name])
 ft_defaults
  
 load('LF_4Src.mat') % LF is nSrcs x 3 D x nSens

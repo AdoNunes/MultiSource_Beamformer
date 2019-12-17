@@ -95,8 +95,6 @@ for iSrc = 1:nSrc % get U3D for each source
     Su          = hu' * iR * hu;  
     SNR(iSrc)   = trace(Su*iTu);
     
-    Pow(iSrc)   = trace(hu' * invSPD(sIn.Rm1) * hu); 
-    Pnoise(iSrc)= trace(hu' * arrN * hu); 
     
 end
 
@@ -185,12 +183,12 @@ end
 if ~isempty(HrefT)
     hT = lstU3D(notRef,:) * squeeze(arrH(notRef,:,:)); 
     Ht = [HrefT; hT];
-    wT = invSPD(Ht * sIn.Rm1 * Ht') * Ht * sIn.Rm1;
+    wT = invSPD(Ht * sIn.iR * Ht') * Ht * sIn.iR;
 else
     % Single source case
     U = lstU3D;
     hT = U * squeeze(arrH); 
-    wT = hT * sIn.Rm1 / (hT * sIn.Rm1 * hT');
+    wT = hT * sIn.iR / (hT * sIn.iR * hT');
 end    
 
 %% set outputs
@@ -205,3 +203,33 @@ sOut.beamSNR = SNR(notRef);
 
 end
 
+function [Am1, bException] = invSPD(A)
+%
+% SYNTAX:
+%   Am1 = invSPD(A)
+% 
+% This function finds an inverse of a SYMMETRIC POSITIVE DEFINITE matrix.
+% Supposed to be more accurate than using inv(), because the 
+% latter does not exploit the special form of A
+%
+% Input:
+%   A           (n x n) SPD matrix
+% Ouput:
+%   Am1         A^(-1)
+%   bException  true if fall back to inv() was necessary
+%
+% A. Moiseev, DSRF, July 2011
+
+bException = false;
+
+try
+    R=chol(A);      % Find upper triangular R such that R' * R = A;
+    I=eye(size(A)); 
+    Am1=R\(R'\I);    % NOTE: A\B = inv(A)*B
+catch
+    bException = true;
+    Am1=inv(A);
+    warning('Falled back to inv(A)');
+%    display(A);
+end
+end

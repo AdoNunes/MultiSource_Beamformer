@@ -2,12 +2,17 @@ function sOut = MCMV_BF(sIn)
 %
 %
 % This function generates a set of MCMV (multi-source) scalar beamformer
-% weights for a given set of N sources (nSrc) forward solutions (FS). 
-% First for each source, saliences are computed independently, then from
+% weights for a given set of nSrc source locations with a known set of
+% forward solutions (FS), corresponding to x, y, z source orientation in
+% each location. 
+%
+% First for each location, saliences are computed independently, then from
 % strongest to weakest contribution of the strongest source is removed to 
 % find the orientation of the next strongest source.
-% This iteration procedure is described in :
+% This procedure is a specific case of a more gerneral iteration scheme
+% described in:
 %     Moiseev et al., Neuroimage, 2011, v.58, p.481-496.
+% for a situation when source spatial locations are known a priori.
 %
 % The function produces a matrix W of beamformer weights (nSrc x nSensors) 
 % and a matrix U of sources orientations (3 x nSrc). Given the constraints
@@ -46,7 +51,8 @@ function sOut = MCMV_BF(sIn)
 %                 : beamSNR (double) the beamformer joint power "SNR"
 %                           value for the set of nSrcs. 
 %
-% Originally written by A.Moiseev, BCNI, October 2017
+% A.Nunes, SFU, 2019
+% Based on the MCMV beamformer initial implementation by A.Moiseev, DSRF, 2011. 
 
 
 arrH = sIn.arrH;
